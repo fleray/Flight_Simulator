@@ -7,6 +7,7 @@ import { PlaneTrajectoryComputation, AdsbJson } from './model/PlaneTrajectory'
 import { PlaneLayer } from './view/PlaneLayer'
 import { MapView } from './view/MapView'
 import { Controls } from './view/Controls'
+import { interpolate } from 'd3-interpolate'
 
 registerLoaders([OBJLoader])
 
@@ -33,6 +34,40 @@ const mockAdsbData: AdsbJson = {
   ]
 }
 
+// Interpolate aircraft state at a given timestamp
+function interpolateAircraft(aircraft: any[], timestamp: number) {
+  if (aircraft.length === 0) return null;
+  if (timestamp <= aircraft[0].timestamp) return aircraft[0];
+  if (timestamp >= aircraft[aircraft.length - 1].timestamp) return aircraft[aircraft.length - 1];
+
+  let prev = aircraft[0], next = aircraft[0];
+  for (let i = 1; i < aircraft.length; i++) {
+    if (aircraft[i].timestamp >= timestamp) {
+      prev = aircraft[i - 1];
+      next = aircraft[i];
+      break;
+    }
+  }
+  const t = (timestamp - prev.timestamp) / (next.timestamp - prev.timestamp);
+
+  // Use d3-interpolate for position, bearing, and pitch
+  const interpLon = interpolate(prev.lon, next.lon)(t);
+  const interpLat = interpolate(prev.lat, next.lat)(t);
+  const interpAlt = interpolate(prev.alt, next.alt)(t);
+  const interpBearing = interpolate(prev.bearing, next.bearing)(t);
+  const interpPitch = interpolate(prev.pitch, next.pitch)(t);
+
+  return {
+    ...prev,
+    lon: interpLon,
+    lat: interpLat,
+    alt: interpAlt,
+    bearing: interpBearing,
+    pitch: interpPitch,
+    position: [interpLon, interpLat, interpAlt]
+  };
+}
+
 function App() {
   const [adsbData, setAdsbData] = useState<AdsbJson | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -46,9 +81,7 @@ function App() {
   }
 
   const [viewState, setViewState] = useState({ ...INITIAL_VIEW_STATE })
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [currentIdx, setCurrentIdx] = useState(0)
-  const animationRef = useRef<NodeJS.Timeout | null>(null)
+  const [timestamp, setTimestamp] = useState(0)
 
   // Handle file upload and parse JSON
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -60,8 +93,7 @@ function App() {
         const json = JSON.parse(event.target?.result as string)
         setAdsbData(json)
         setError(null)
-        setCurrentIdx(0)
-        setIsPlaying(false)
+        setTimestamp(0)
       } catch (err) {
         setError('Invalid JSON file.')
         setAdsbData(null)
@@ -75,24 +107,13 @@ function App() {
     return PlaneTrajectoryComputation.computeTrajectory(adsbData || mockAdsbData)
   }, [adsbData])
 
-  // Animation effect
-  useEffect(() => {
-    if (isPlaying) {
-      animationRef.current = setInterval(() => {
-        setCurrentIdx((idx) => {
-          if (idx < aircraft.length - 1) {
-            return idx + 1
-          } else {
-            setIsPlaying(false)
-            return idx
-          }
-        })
-      }, 500) // Adjust speed as needed
-    } else if (animationRef.current) {
-      clearInterval(animationRef.current)
-    }
-    return () => { if (animationRef.current) clearInterval(animationRef.current); }
-  }, [isPlaying, aircraft.length])
+  // Find min and max timestamp for the slider
+  const minTS = aircraft.length > 0 ? aircraft[0].timestamp : 0;
+  const maxTS = aircraft.length > 0 ? aircraft[aircraft.length - 1].timestamp : 0;
+
+  // Interpolated aircraft point for current timestamp
+  const interpolatedAircraft = interpolateAircraft(aircraft, timestamp);
+  const current = interpolatedAircraft || {};
 
   // Dynamic size scale for zoom-independent model size
   const REFERENCE_ZOOM = 16
@@ -127,14 +148,11 @@ function App() {
       pickable: false,
     }),
     new PlaneLayer({
-      aircraftPoint: aircraft[currentIdx],
+      aircraftPoint: interpolatedAircraft,
       modelUrl: AIRCRAFT_MODEL_URL,
       sizeScale: adjustedSizeScale,
     }),
   ]
-
-  // UI for animation controls and flight data
-  const current = aircraft[currentIdx] || {}
 
   return (
     <div className="App" style={{ padding: 20 }}>
@@ -153,14 +171,13 @@ function App() {
         zIndex: 10
       }}>
         <Controls
-          isPlaying={isPlaying}
-          onPlayPause={() => setIsPlaying((p) => !p)}
-          currentIdx={currentIdx}
-          setCurrentIdx={idx => { setCurrentIdx(idx); setIsPlaying(false); }}
           aircraft={aircraft}
+          minTS={minTS}
+          maxTS={maxTS}
           error={error}
           handleFileChange={handleFileChange}
           current={current}
+          onTimestampChange={setTimestamp}
         />
       </div>
     </div>
