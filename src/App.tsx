@@ -1,16 +1,14 @@
-
 import React, { useState, useMemo, useRef, useEffect, ChangeEvent } from 'react'
 import './App.css'
-import DeckGL from '@deck.gl/react'
-import { Map } from 'react-map-gl';
-import maplibregl from 'maplibre-gl';
 import { PathLayer, TextLayer } from '@deck.gl/layers'
-import { OBJLoader } from '@loaders.gl/obj';
-import { registerLoaders } from '@loaders.gl/core';
-import { PlaneTrajectoryComputation, AdsbJson } from './PlaneTrajectoryComputation';
-import { PlaneLayer } from './PlaneLayer';
+import { OBJLoader } from '@loaders.gl/obj'
+import { registerLoaders } from '@loaders.gl/core'
+import { PlaneTrajectoryComputation, AdsbJson } from './model/PlaneTrajectory'
+import { PlaneLayer } from './view/PlaneLayer'
+import { MapView } from './view/MapView'
+import { Controls } from './view/Controls'
 
-registerLoaders([OBJLoader]);
+registerLoaders([OBJLoader])
 
 // CartoDB Positron style
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json'
@@ -33,7 +31,7 @@ const mockAdsbData: AdsbJson = {
     [30, 48.88, 2.38, 1300, 120, 135],
     [40, 48.89, 2.39, 1100, 80, 180],
   ]
-};
+}
 
 function App() {
   const [adsbData, setAdsbData] = useState<AdsbJson | null>(null)
@@ -45,12 +43,12 @@ function App() {
     zoom: 12,            // Adjust zoom as needed for city view
     pitch: 85,
     bearing: 0
-  };
+  }
 
-  const [viewState, setViewState] = useState({ ...INITIAL_VIEW_STATE });
+  const [viewState, setViewState] = useState({ ...INITIAL_VIEW_STATE })
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentIdx, setCurrentIdx] = useState(0)
-  const animationRef = useRef<NodeJS.Timeout | null>(null);
+  const animationRef = useRef<NodeJS.Timeout | null>(null)
 
   // Handle file upload and parse JSON
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -73,8 +71,8 @@ function App() {
   }
 
   // Compute trajectory and aircraft points
-  const { trajectory, aircraft, minTimestamp, maxTimestamp } = useMemo(() => {
-    return PlaneTrajectoryComputation.computeTrajectory(adsbData || mockAdsbData);
+  const { trajectory, aircraft } = useMemo(() => {
+    return PlaneTrajectoryComputation.computeTrajectory(adsbData || mockAdsbData)
   }, [adsbData])
 
   // Animation effect
@@ -97,10 +95,10 @@ function App() {
   }, [isPlaying, aircraft.length])
 
   // Dynamic size scale for zoom-independent model size
-  const REFERENCE_ZOOM = 16;
-  const BASE_SIZE_SCALE = 0.015;
-  const zoomScale = Math.pow(2, viewState.zoom - REFERENCE_ZOOM);
-  const adjustedSizeScale = BASE_SIZE_SCALE / zoomScale;
+  const REFERENCE_ZOOM = 16
+  const BASE_SIZE_SCALE = 0.015
+  const zoomScale = Math.pow(2, viewState.zoom - REFERENCE_ZOOM)
+  const adjustedSizeScale = BASE_SIZE_SCALE / zoomScale
 
   // Deck.gl layers
   const layers = [
@@ -140,52 +138,30 @@ function App() {
 
   return (
     <div className="App" style={{ padding: 20 }}>
+
+      <div style={{ height: '70vh', marginTop: 10, border: '1px solid #ccc', borderRadius: 8, overflow: 'hidden' }}>
+        <MapView
+          layers={layers}
+          viewState={viewState}
+          onViewStateChange={({ viewState }: { viewState: typeof INITIAL_VIEW_STATE }) => setViewState(viewState)}
+        />
+      </div>
       <div style={{
         position: 'absolute',
         top: 20,
         right: 20,
         zIndex: 10
       }}>
-        <h1>Flight Trajectory Visualizer</h1>
-        <input type="file" accept="application/json" onChange={handleFileChange} style={{ marginBottom: 10 }} />
-        {error && <div style={{ color: 'red', marginBottom: 10 }}>{error}</div>}
-        <div style={{ margin: '10px 0' }}>
-          <button onClick={() => setIsPlaying((p) => !p)} disabled={aircraft.length <= 1}>
-            {isPlaying ? 'Pause' : 'Play'}
-          </button>
-          <input
-            type="range"
-            min={0}
-            max={aircraft.length - 1}
-            value={currentIdx}
-            onChange={e => { setCurrentIdx(Number(e.target.value)); setIsPlaying(false); }}
-            style={{ width: 300, marginLeft: 10 }}
-            disabled={aircraft.length <= 1}
-          />
-          <span style={{ marginLeft: 10 }}>
-            {current.timestamp !== undefined ? `Timestamp: ${current.timestamp}` : ''}
-            {current.speed !== undefined ? ` | Speed: ${current.speed?.toFixed(1)} m/s` : ''}
-            {current.alt !== undefined ? ` | Altitude: ${current.alt} m` : ''}
-            {current.bearing !== undefined ? ` | Bearing: ${current.bearing?.toFixed(1)}°` : ''}
-            {current.pitch !== undefined ? ` | Pitch: ${current.pitch?.toFixed(1)}°` : ''}
-          </span>
-        </div>
-      </div>
-      <div style={{ height: '70vh', marginTop: 10, border: '1px solid #ccc', borderRadius: 8, overflow: 'hidden' }}>
-        <DeckGL
-          initialViewState={viewState}
-          controller={true}
-          layers={layers}
-          onViewStateChange={({ viewState }: { viewState: typeof INITIAL_VIEW_STATE }) => setViewState(viewState)}
-        >
-          <Map
-            mapLib={maplibregl}
-            mapStyle={MAP_STYLE}
-            width="100%"
-            height="100%"
-            reuseMaps
-          />
-        </DeckGL>
+        <Controls
+          isPlaying={isPlaying}
+          onPlayPause={() => setIsPlaying((p) => !p)}
+          currentIdx={currentIdx}
+          setCurrentIdx={idx => { setCurrentIdx(idx); setIsPlaying(false); }}
+          aircraft={aircraft}
+          error={error}
+          handleFileChange={handleFileChange}
+          current={current}
+        />
       </div>
     </div>
   )

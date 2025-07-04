@@ -3,7 +3,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Map } from 'react-map-gl';
 import './index.css'
-import App from './App.tsx'
+import App from './App'
 
 const rootElement = document.getElementById('root')
 if (rootElement) {
